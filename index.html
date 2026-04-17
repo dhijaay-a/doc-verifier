@@ -1,0 +1,243 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document Verifier</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .toast {
+        visibility: hidden;
+        min-width: 250px;
+        background: #333;
+        color: white;
+        text-align: center;
+        border-radius: 8px;
+        padding: 16px;
+        position: fixed;
+        left: 50%;
+        bottom: 30px;
+        transform: translateX(-50%);
+        z-index: 1000;
+      }
+      .toast.show {
+        visibility: visible;
+        animation: fade 3s;
+      }
+      .toast.success {
+        background: #0060ff;
+      }
+      .toast.error {
+        background: #f44336;
+      }
+      @keyframes fade {
+        0% {
+          opacity: 0;
+          bottom: 0;
+        }
+        10% {
+          opacity: 1;
+          bottom: 30px;
+        }
+        90% {
+          opacity: 1;
+          bottom: 30px;
+        }
+        100% {
+          opacity: 0;
+          bottom: 0;
+        }
+      }
+    </style>
+  </head>
+  <body
+    class="bg-black text-white flex items-center justify-center min-h-screen"
+  >
+    <div class="w-full max-w-md p-8 bg-gray-900 rounded-xl shadow-lg">
+      <h1 class="text-2xl font-bold mb-6 text-center">Document Verifier</h1>
+
+      <!-- Token input -->
+      <div id="token-section">
+        <label class="block mb-2 text-sm">Access Token</label>
+        <input
+          type="password"
+          id="token-input"
+          placeholder="Enter token"
+          class="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 focus:border-[#0060Ff] outline-none"
+        />
+        <button
+          id="set-token"
+          class="w-full mt-4 bg-[#0060Ff] hover:bg-blue-700 font-bold py-3 rounded-lg"
+        >
+          Set Token
+        </button>
+      </div>
+
+      <!-- File upload (hidden until token set) -->
+      <div id="upload-section" class="hidden mt-6">
+        <label class="block mb-2 text-sm">Select .txt file</label>
+        <div class="relative">
+          <input
+            type="file"
+            id="file-input"
+            accept=".txt"
+            class="absolute inset-0 opacity-0 cursor-pointer"
+          />
+          <div
+            id="file-label"
+            class="p-3 bg-gray-800 border border-gray-700 rounded-lg text-center truncate"
+          >
+            No file chosen
+          </div>
+        </div>
+        <button
+          id="verify-btn"
+          class="w-full mt-4 bg-[#0060Ff] hover:bg-blue-700 font-bold py-3 rounded-lg"
+        >
+          Verify File
+        </button>
+        <button
+          id="reset-token"
+          class="w-full mt-2 text-sm text-gray-400 hover:text-white"
+        >
+          Use different token
+        </button>
+        <div id="status" class="mt-4 text-center text-sm"></div>
+      </div>
+    </div>
+    <div id="toast" class="toast"></div>
+
+    <script>
+      const API_BASE = "https://mailer-backend-hunq.onrender.com";
+      // ========================================
+
+      const tokenSection = document.getElementById("token-section");
+      const uploadSection = document.getElementById("upload-section");
+      const tokenInput = document.getElementById("token-input");
+      const setTokenBtn = document.getElementById("set-token");
+      const fileInput = document.getElementById("file-input");
+      const fileLabel = document.getElementById("file-label");
+      const verifyBtn = document.getElementById("verify-btn");
+      const resetTokenBtn = document.getElementById("reset-token");
+      const statusDiv = document.getElementById("status");
+      const toast = document.getElementById("toast");
+
+      let authToken = "";
+
+      function showToast(msg, type = "success") {
+        toast.textContent = msg;
+        toast.className = `toast show ${type}`;
+        setTimeout(() => toast.classList.remove("show"), 3000);
+      }
+
+      function showUpload(show) {
+        if (show) {
+          tokenSection.classList.add("hidden");
+          uploadSection.classList.remove("hidden");
+        } else {
+          tokenSection.classList.remove("hidden");
+          uploadSection.classList.add("hidden");
+          authToken = "";
+          tokenInput.value = "";
+          fileInput.value = "";
+          fileLabel.textContent = "No file chosen";
+          statusDiv.innerHTML = "";
+        }
+      }
+
+      // Validate token with backend
+      async function validateToken(token) {
+        try {
+          const res = await fetch(`${API_BASE}/api/validate-verify-token`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json();
+          return { ok: res.ok, ...data };
+        } catch (err) {
+          return { ok: false, message: "Network error" };
+        }
+      }
+
+      setTokenBtn.addEventListener("click", async () => {
+        const token = tokenInput.value.trim();
+        if (!token) {
+          showToast("Please enter a token", "error");
+          return;
+        }
+
+        setTokenBtn.disabled = true;
+        setTokenBtn.textContent = "Validating...";
+
+        const result = await validateToken(token);
+
+        setTokenBtn.disabled = false;
+        setTokenBtn.textContent = "Set Token";
+
+        if (result.ok && result.valid) {
+          authToken = token;
+          showUpload(true);
+          showToast("✓ Token accepted", "success");
+        } else {
+          showToast(result.message || "Invalid token", "error");
+        }
+      });
+
+      tokenInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") setTokenBtn.click();
+      });
+
+      fileInput.addEventListener("change", (e) => {
+        fileLabel.textContent = e.target.files[0]?.name || "No file chosen";
+      });
+
+      fileLabel.addEventListener("click", () => fileInput.click());
+
+      resetTokenBtn.addEventListener("click", () => showUpload(false));
+
+      verifyBtn.addEventListener("click", async () => {
+        const file = fileInput.files[0];
+        if (!file) {
+          showToast("Please select a file", "error");
+          return;
+        }
+        if (!file.name.toLowerCase().endsWith(".txt")) {
+          showToast("Only .txt files allowed", "error");
+          return;
+        }
+
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = "Verifying...";
+        statusDiv.innerHTML = "";
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+          const res = await fetch(`${API_BASE}/api/verify-shared`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${authToken}` },
+            body: formData,
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showToast("✓ File verified successfully!", "success");
+            statusDiv.innerHTML =
+              '<span class="text-green-500">✓ Format is valid</span>';
+          } else {
+            const msg = data.message || "Verification failed";
+            showToast(msg, "error");
+            statusDiv.innerHTML = `<span class="text-red-500">✗ ${msg}</span>`;
+          }
+        } catch (err) {
+          showToast("Network error", "error");
+          statusDiv.innerHTML =
+            '<span class="text-red-500">Network error</span>';
+        } finally {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = "Verify File";
+        }
+      });
+    </script>
+  </body>
+</html>
