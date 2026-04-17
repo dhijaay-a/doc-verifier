@@ -24,36 +24,36 @@
         visibility: visible;
         animation: fade 3s;
       }
-      .toast.success {
-        background: #0060ff;
-      }
-      .toast.error {
-        background: #f44336;
-      }
+      .toast.success { background: #0060ff; }
+      .toast.error { background: #f44336; }
       @keyframes fade {
-        0% {
-          opacity: 0;
-          bottom: 0;
-        }
-        10% {
-          opacity: 1;
-          bottom: 30px;
-        }
-        90% {
-          opacity: 1;
-          bottom: 30px;
-        }
-        100% {
-          opacity: 0;
-          bottom: 0;
-        }
+        0% { opacity: 0; bottom: 0; }
+        10% { opacity: 1; bottom: 30px; }
+        90% { opacity: 1; bottom: 30px; }
+        100% { opacity: 0; bottom: 0; }
+      }
+      #file-content {
+        max-height: 200px;
+        overflow-y: auto;
+        background: #1a1a1a;
+        border: 1px solid #333;
+        font-family: monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .error-details {
+        background: #2d1a1a;
+        border-left: 4px solid #f44336;
+        padding: 12px;
+        margin-top: 8px;
+        border-radius: 4px;
+        font-family: monospace;
+        white-space: pre-wrap;
       }
     </style>
   </head>
-  <body
-    class="bg-black text-white flex items-center justify-center min-h-screen"
-  >
-    <div class="w-full max-w-md p-8 bg-gray-900 rounded-xl shadow-lg">
+  <body class="bg-black text-white flex items-center justify-center min-h-screen">
+    <div class="w-full max-w-2xl p-8 bg-gray-900 rounded-xl shadow-lg">
       <h1 class="text-2xl font-bold mb-6 text-center">Document Verifier</h1>
 
       <!-- Token input -->
@@ -73,7 +73,7 @@
         </button>
       </div>
 
-      <!-- File upload (hidden until token set) -->
+      <!-- File upload -->
       <div id="upload-section" class="hidden mt-6">
         <label class="block mb-2 text-sm">Select .txt file</label>
         <div class="relative">
@@ -90,6 +90,13 @@
             No file chosen
           </div>
         </div>
+
+        <!-- File content preview -->
+        <div class="mt-4">
+          <p class="text-sm text-gray-400 mb-1">File content:</p>
+          <pre id="file-content" class="p-3 rounded-lg text-sm text-gray-300"></pre>
+        </div>
+
         <button
           id="verify-btn"
           class="w-full mt-4 bg-[#0060Ff] hover:bg-blue-700 font-bold py-3 rounded-lg"
@@ -102,14 +109,15 @@
         >
           Use different token
         </button>
+
         <div id="status" class="mt-4 text-center text-sm"></div>
+        <div id="error-details" class="hidden error-details"></div>
       </div>
     </div>
     <div id="toast" class="toast"></div>
 
     <script>
       const API_BASE = "https://mailer-backend-hunq.onrender.com";
-      // ========================================
 
       const tokenSection = document.getElementById("token-section");
       const uploadSection = document.getElementById("upload-section");
@@ -120,11 +128,12 @@
       const verifyBtn = document.getElementById("verify-btn");
       const resetTokenBtn = document.getElementById("reset-token");
       const statusDiv = document.getElementById("status");
+      const errorDetailsDiv = document.getElementById("error-details");
       const toast = document.getElementById("toast");
       const fileContentPre = document.getElementById("file-content");
 
       let authToken = "";
-      let currentFileContent = "";   // store the text content
+      let currentFileContent = "";
 
       function showToast(msg, type = "success") {
         toast.textContent = msg;
@@ -143,13 +152,14 @@
           tokenInput.value = "";
           fileInput.value = "";
           fileLabel.textContent = "No file chosen";
-          fileContentPre.textContent = "";    // clear preview
+          fileContentPre.textContent = "";
           currentFileContent = "";
           statusDiv.innerHTML = "";
+          errorDetailsDiv.classList.add("hidden");
+          errorDetailsDiv.textContent = "";
         }
       }
 
-      // Validate token with backend
       async function validateToken(token) {
         try {
           const res = await fetch(`${API_BASE}/api/validate-verify-token`, {
@@ -191,7 +201,6 @@
         if (e.key === "Enter") setTokenBtn.click();
       });
 
-      // When file is selected, read its content and display it
       fileInput.addEventListener("change", async (e) => {
         const file = e.target.files[0];
         if (!file) {
@@ -203,7 +212,6 @@
 
         fileLabel.textContent = file.name;
 
-        // Read file as text
         try {
           const text = await file.text();
           currentFileContent = text;
@@ -232,32 +240,49 @@
         verifyBtn.disabled = true;
         verifyBtn.textContent = "Verifying...";
         statusDiv.innerHTML = "";
+        errorDetailsDiv.classList.add("hidden");
+        errorDetailsDiv.textContent = "";
 
         const formData = new FormData();
         formData.append("file", file);
 
         try {
-          const res = await fetch(`${API_BASE}/api/verify-shared`, {
+          // Use the same endpoint as the React app for detailed errors
+          const res = await fetch(`${API_BASE}/api/verify`, {
             method: "POST",
             headers: { Authorization: `Bearer ${authToken}` },
             body: formData,
           });
-          const data = await res.json();
+
+          // For error responses, the backend may return JSON or plain text
+          const contentType = res.headers.get("content-type");
+          let data;
+          if (contentType && contentType.includes("application/json")) {
+            data = await res.json();
+          } else {
+            const text = await res.text();
+            data = { message: text };
+          }
+
+          console.log("Verification response:", data);
 
           if (res.ok) {
             showToast("✓ File verified successfully!", "success");
             statusDiv.innerHTML = '<span class="text-green-500">✓ Format is valid</span>';
-            // Optionally keep content displayed
           } else {
-            const msg = data.message || "Verification failed";
-            showToast(msg, "error");
-            // Display detailed error alongside the file content (which is already shown)
-            statusDiv.innerHTML = `<span class="text-red-500">✗ ${msg}</span>`;
-            // No need to hide content; it stays visible
+            const errorMessage = data.message || "Verification failed";
+            showToast(errorMessage, "error");
+            statusDiv.innerHTML = `<span class="text-red-500">✗ ${errorMessage}</span>`;
+            // Show the full detailed message in the error details block
+            errorDetailsDiv.textContent = errorMessage;
+            errorDetailsDiv.classList.remove("hidden");
           }
         } catch (err) {
+          console.error("Verification error:", err);
           showToast("Network error", "error");
           statusDiv.innerHTML = '<span class="text-red-500">Network error</span>';
+          errorDetailsDiv.textContent = "Could not connect to the server.";
+          errorDetailsDiv.classList.remove("hidden");
         } finally {
           verifyBtn.disabled = false;
           verifyBtn.textContent = "Verify File";
